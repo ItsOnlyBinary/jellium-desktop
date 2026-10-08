@@ -308,6 +308,10 @@
                 'stop': 'stop',
                 'next': 'next',
                 'previous': 'previous',
+                'next_chapter': 'nextchapter',
+                'previous_chapter': 'previouschapter',
+                'pageup': 'nextchapter',
+                'pagedown': 'previouschapter',
                 'seek_forward': 'fastforward',
                 'seek_backward': 'rewind'
             };
@@ -317,13 +321,47 @@
                 actions.forEach(action => {
                     const mappedAction = remap[action] || action;
                     console.debug('[Media] Sending to inputManager:', mappedAction);
-                    if (self.inputManager && typeof self.inputManager.handleCommand === 'function') {
+                    if (mappedAction === 'nextchapter' && self.playbackManager) {
+                        self.playbackManager.nextChapter();
+                    } else if (mappedAction === 'previouschapter' && self.playbackManager) {
+                        self.playbackManager.previousChapter();
+                    } else if (self.inputManager && typeof self.inputManager.handleCommand === 'function') {
                         self.inputManager.handleCommand(mappedAction, {});
                     } else {
                         console.warn('[Media] inputManager.handleCommand not available, inputManager:', !!self.inputManager);
                     }
                 });
             });
+
+            const keyHandler = (e) => {
+                if (e.defaultPrevented) return;
+                if (e.ctrlKey || e.altKey || e.metaKey || e.shiftKey) return;
+
+                const isPageUp = e.key === 'PageUp' || e.code === 'PageUp' || e.keyCode === 33;
+                const isPageDown = e.key === 'PageDown' || e.code === 'PageDown' || e.keyCode === 34;
+
+                if (!isPageUp && !isPageDown) return;
+
+                const target = e.target;
+                if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
+                    return;
+                }
+
+                if (pm && typeof pm.isPlaying === 'function' && pm.isPlaying()) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (isPageUp) {
+                        console.debug('[Media] PageUp shortcut triggered nextChapter');
+                        pm.nextChapter();
+                    } else {
+                        console.debug('[Media] PageDown shortcut triggered previousChapter');
+                        pm.previousChapter();
+                    }
+                }
+            };
+
+            document.addEventListener('keydown', keyHandler, true);
+            this._keyHandler = keyHandler;
 
             window.api.input.positionSeek.connect((positionMs) => {
                 console.debug('[Media] positionSeek received:', positionMs);
@@ -351,6 +389,10 @@
 
         destroy() {
             this.stopPositionUpdates();
+            if (this._keyHandler) {
+                document.removeEventListener('keydown', this._keyHandler, true);
+                this._keyHandler = null;
+            }
             if (this.artworkAbortController) {
                 this.artworkAbortController.abort();
                 this.artworkAbortController = null;
